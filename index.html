@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Probability Lab & Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #f1f5f9; }
+        .gradient-bg { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+        .spinner { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .chart-container { position: relative; height: 220px; width: 100%; }
+    </style>
+</head>
+<body class="p-2 md:p-6">
+
+    <div class="max-w-6xl mx-auto">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Sidebar: Controls -->
+            <div class="lg:col-span-4 space-y-4">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h1 class="text-xl font-bold text-slate-800 mb-4">Experiment Lab</h1>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Scenario Type</label>
+                            <select id="distSelect" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" onchange="resetCumulativeData(); updateUI();">
+                                <option value="uniform">Discrete Uniform</option>
+                                <option value="binomial">Binomial</option>
+                                <option value="poisson">Poisson</option>
+                            </select>
+                        </div>
+
+                        <div id="paramsContainer" class="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl">
+                            <!-- JS Injected Params -->
+                        </div>
+
+                        <div class="pt-2 border-t border-slate-100">
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1"># Experiments to Run</label>
+                            <input type="number" id="batchSize" value="100" min="1" max="5000" class="w-full p-2 border border-slate-300 rounded-lg mb-4">
+                            
+                            <div class="flex flex-col gap-2">
+                                <button id="runBtn" onclick="runSimulation(false)" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all">
+                                    Run Single Experiment
+                                </button>
+                                <button onclick="runSimulation(true)" class="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-all">
+                                    Run Multiple Experiments
+                                </button>
+                            </div>
+                        </div>
+
+                        <button onclick="resetLab()" class="w-full text-sm text-slate-400 hover:text-red-500 transition-colors">Clear Session Data</button>
+                    </div>
+                </div>
+
+                <div id="adminLocked" class="p-4 bg-slate-100 rounded-xl flex justify-between items-center">
+                    <span class="text-xs font-medium text-slate-500">Delay: <span id="delayDisplay">1.5</span>s</span>
+                    <button onclick="openAdminModal()" class="text-xs bg-white px-3 py-1 rounded border border-slate-300 shadow-sm hover:bg-slate-50">Admin Settings</button>
+                </div>
+            </div>
+
+            <!-- Main Panel -->
+            <div class="lg:col-span-8 space-y-6">
+                <div id="displayPanel" class="gradient-bg min-h-[320px] rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden shadow-lg p-6">
+                    <div id="idleState" class="text-center opacity-40">
+                        <p class="text-lg">Configure and Run Experiment</p>
+                    </div>
+
+                    <div id="loadingState" class="hidden text-center">
+                        <div class="spinner mx-auto mb-4"></div>
+                        <p class="text-blue-300 animate-pulse tracking-widest uppercase text-xs font-bold">Simulating Outcomes...</p>
+                    </div>
+
+                    <div id="resultState" class="hidden w-full">
+                        <div class="flex flex-col md:flex-row items-center justify-around gap-8">
+                            <div class="text-center">
+                                <p id="resultLabel" class="text-blue-400 text-xs font-bold uppercase tracking-widest mb-1"></p>
+                                <h3 id="resultValue" class="text-7xl font-black">0</h3>
+                                <p id="batchInfo" class="text-slate-400 text-[10px] mt-2 italic"></p>
+                            </div>
+                            <div class="bg-white/10 p-4 rounded-xl w-full max-w-[400px]">
+                                <div class="flex justify-between items-center mb-2">
+                                    <p class="text-[10px] font-bold uppercase text-blue-300">Cumulative Outcomes</p>
+                                    <span id="cumTotal" class="text-[9px] bg-blue-500/20 px-2 py-0.5 rounded text-blue-200 uppercase">N=0</span>
+                                </div>
+                                <div class="chart-container">
+                                    <canvas id="histogramChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <h2 class="font-bold text-slate-800">Recent Trials Log</h2>
+                        <span id="trialCounter" class="text-xs font-mono bg-blue-100 text-blue-700 px-2 py-1 rounded">0 Trials Total</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                                <tr>
+                                    <th class="px-6 py-3">Trial ID</th>
+                                    <th class="px-6 py-3">Scenario</th>
+                                    <th class="px-6 py-3">Latest Outcome</th>
+                                    <th class="px-6 py-3 text-right">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyList" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="adminModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-80">
+            <h3 class="text-lg font-bold mb-4">Admin Access</h3>
+            <div id="passwordArea">
+                <input type="password" id="adminPass" placeholder="Enter Password" class="w-full p-2 border border-slate-300 rounded-lg mb-4">
+                <button onclick="checkAdminPass()" class="w-full py-2 bg-blue-600 text-white font-bold rounded-lg">Login</button>
+            </div>
+            <div id="settingsArea" class="hidden space-y-4">
+                <div>
+                    <label class="block text-xs font-bold mb-1">Result Delay (ms)</label>
+                    <input type="number" id="delayInput" value="1500" class="w-full p-2 border border-slate-300 rounded-lg">
+                </div>
+                <button onclick="saveAdminSettings()" class="w-full py-2 bg-green-600 text-white font-bold rounded-lg">Save & Close</button>
+            </div>
+            <button onclick="closeAdminModal()" class="w-full mt-2 text-slate-400 text-xs">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        let history = [];
+        let cumulativeData = []; 
+        let simulationDelay = 1500; 
+        let chartInstance = null;
+
+        const SCENARIOS = {
+            uniform: {
+                title: "Uniform",
+                label: "Outcome",
+                params: [{ id: 'min', label: 'Min', val: 1 }, { id: 'max', label: 'Max', val: 8 }],
+                calc: (p) => Math.floor(Math.random() * (p.max - p.min + 1)) + parseInt(p.min)
+            },
+            binomial: {
+                title: "Binomial",
+                label: "Successes",
+                params: [
+                    { id: 'n', label: 'Trials (n)', val: 20 }, 
+                    { id: 'pi', label: 'Prob (π)', val: 0.2 } // Defaulted to 0.2
+                ],
+                calc: (p) => {
+                    let c = 0;
+                    for(let i=0; i<p.n; i++) if(Math.random() < p.pi) c++;
+                    return c;
+                }
+            },
+            poisson: {
+                title: "Poisson",
+                label: "Events",
+                params: [
+                    { id: 'rate', label: 'Rate (λ)', val: 4 },
+                    { id: 'unit', label: 'Time Unit', type: 'select', options: ['seconds', 'minutes', 'hours', 'days'], default: 'hours' } // Defaulted to hours
+                ],
+                calc: (p) => {
+                    const L = Math.exp(-p.rate);
+                    let k = 0, p_v = 1;
+                    do { k++; p_v *= Math.random(); } while (p_v > L);
+                    return k - 1;
+                }
+            }
+        };
+
+        function resetCumulativeData() {
+            cumulativeData = [];
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = null;
+        }
+
+        function updateUI() {
+            const dist = document.getElementById('distSelect').value;
+            const container = document.getElementById('paramsContainer');
+            container.innerHTML = SCENARIOS[dist].params.map(p => {
+                if(p.type === 'select') {
+                    return `
+                    <div class="col-span-2">
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">${p.label}</label>
+                        <select id="param_${p.id}" class="w-full p-1.5 text-sm bg-white border border-slate-300 rounded outline-none focus:border-blue-500">
+                            ${p.options.map(o => `<option value="${o}" ${p.default === o ? 'selected' : ''}>${o}</option>`).join('')}
+                        </select>
+                    </div>`;
+                }
+                return `
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">${p.label}</label>
+                    <input type="number" id="param_${p.id}" value="${p.val}" step="any" class="w-full p-1.5 text-sm bg-white border border-slate-300 rounded outline-none focus:border-blue-500">
+                </div>`;
+            }).join('');
+        }
+
+        async function runSimulation(isBatch) {
+            const distKey = document.getElementById('distSelect').value;
+            const scenario = SCENARIOS[distKey];
+            const batchSize = isBatch ? parseInt(document.getElementById('batchSize').value) || 1 : 1;
+            
+            const params = {};
+            scenario.params.forEach(p => {
+                const el = document.getElementById(`param_${p.id}`);
+                params[p.id] = p.type === 'select' ? el.value : parseFloat(el.value);
+            });
+
+            toggleUI('loading');
+            await new Promise(r => setTimeout(r, simulationDelay));
+
+            const currentOutcomes = [];
+            for(let i=0; i < batchSize; i++) {
+                const result = scenario.calc(params);
+                currentOutcomes.push(result);
+                cumulativeData.push(result); 
+            }
+
+            const lastOutcome = currentOutcomes[currentOutcomes.length - 1];
+
+            const trialId = history.length + 1;
+            const entry = {
+                id: trialId,
+                scenario: scenario.title,
+                outcomes: currentOutcomes,
+                displayResult: lastOutcome,
+                count: batchSize,
+                time: new Date().toLocaleTimeString([], { hour12: false })
+            };
+            history.unshift(entry);
+
+            toggleUI('result');
+            document.getElementById('resultLabel').innerText = scenario.label + (params.unit ? ` per ${params.unit.slice(0,-1)}` : '');
+            document.getElementById('resultValue').innerText = lastOutcome;
+            document.getElementById('batchInfo').innerText = isBatch ? `Showing final of ${batchSize} runs` : 'Single run result';
+            document.getElementById('cumTotal').innerText = `N=${cumulativeData.length}`;
+            
+            renderChart(cumulativeData, scenario.label);
+            updateHistoryTable();
+        }
+
+        function toggleUI(state) {
+            document.getElementById('idleState').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('resultState').classList.add('hidden');
+            if (state === 'loading') document.getElementById('loadingState').classList.remove('hidden');
+            if (state === 'result') document.getElementById('resultState').classList.remove('hidden');
+        }
+
+        function renderChart(data, xLabel) {
+            const ctx = document.getElementById('histogramChart').getContext('2d');
+            const counts = {};
+            data.forEach(x => counts[x] = (counts[x] || 0) + 1);
+            
+            const labels = Object.keys(counts).sort((a,b) => a-b);
+            const values = labels.map(l => counts[l]);
+
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { enabled: true }
+                    },
+                    scales: {
+                        y: { 
+                            title: { display: true, text: 'Frequency (Total Count)', color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 9 }, stepSize: 1 }
+                        },
+                        x: { 
+                            title: { display: true, text: `Outcome Value (${xLabel})`, color: '#94a3b8', font: { size: 10 } },
+                            grid: { display: false }, 
+                            ticks: { color: '#94a3b8', font: { size: 9 } } 
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateHistoryTable() {
+            const list = document.getElementById('historyList');
+            document.getElementById('trialCounter').innerText = `${history.length} Trials Total`;
+            
+            list.innerHTML = history.slice(0, 50).map(h => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-3 font-mono text-xs text-slate-400">#${h.id}</td>
+                    <td class="px-6 py-3 font-bold text-slate-700">${h.scenario}</td>
+                    <td class="px-6 py-3">
+                        <span class="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-bold">${h.displayResult}</span>
+                        ${h.count > 1 ? `<span class="text-[10px] text-slate-400 ml-1"> (batch of ${h.count})</span>` : ''}
+                    </td>
+                    <td class="px-6 py-3 text-right text-slate-400 text-xs">${h.time}</td>
+                </tr>
+            `).join('');
+        }
+
+        function openAdminModal() { document.getElementById('adminModal').classList.remove('hidden'); }
+        function closeAdminModal() { 
+            document.getElementById('adminModal').classList.add('hidden'); 
+            document.getElementById('passwordArea').classList.remove('hidden');
+            document.getElementById('settingsArea').classList.add('hidden');
+            document.getElementById('adminPass').value = '';
+        }
+        function checkAdminPass() {
+            if (document.getElementById('adminPass').value === "admin") {
+                document.getElementById('passwordArea').classList.add('hidden');
+                document.getElementById('settingsArea').classList.remove('hidden');
+            } else { alert("Access Denied"); }
+        }
+        function saveAdminSettings() {
+            simulationDelay = parseInt(document.getElementById('delayInput').value);
+            document.getElementById('delayDisplay').innerText = (simulationDelay / 1000).toFixed(1);
+            closeAdminModal();
+        }
+
+        function resetLab() {
+            history = [];
+            resetCumulativeData();
+            updateHistoryTable();
+            toggleUI('idle');
+            document.getElementById('idleState').classList.remove('hidden');
+        }
+
+        window.onload = updateUI;
+    </script>
+</body>
+</html>
